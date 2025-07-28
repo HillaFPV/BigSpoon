@@ -1,0 +1,169 @@
+#include <TinyGPSPlus.h>
+#include <TFT_HX8357.h>
+
+// The TinyGPSPlus object
+TinyGPSPlus gps;
+
+// Create screen object
+TFT_HX8357 tft = TFT_HX8357();  
+
+// For stats that happen every 5 seconds
+unsigned long last = 0UL;
+int color = 0;
+
+void setup() {
+  tft.init();
+  tft.setRotation(3);  // Adjust screen rotation as needed
+  tft.fillScreen(TFT_BLACK);
+
+  // Display text
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+  tft.setCursor(5, 5);
+
+  tft.print("Initializing... ");
+
+  // Serial.begin(115200);
+  Serial1.begin(115200);
+
+  tft.print("Done!");
+}
+
+
+void loop()
+{
+
+  // Dispatch incoming characters
+  while (Serial1.available() > 0) {
+    char foo = Serial1.read();
+    // Serial.write(foo);
+    gps.encode(foo);
+  }
+
+  // while (Serial.available() > 0) {
+  //   char foo = Serial.read();
+  //   Serial1.write(foo);
+  // }
+
+ 
+  if (gps.location.isUpdated())
+  {
+    tft.setCursor(5, 5+(0*25));
+
+    tft.print(F("Lat="));
+    tft.print(gps.location.lat(), 6);
+    tft.print(F(" Long="));
+    tft.println(gps.location.lng(), 6);  }
+
+  else if (gps.date.isUpdated())
+  {
+    tft.setCursor(5, 5+(1*25));
+
+    tft.print(F("Year="));
+    tft.print(gps.date.year());
+    tft.print(F(" Month="));
+    tft.print(gps.date.month());
+    tft.print(F(" Day="));
+    tft.println(gps.date.day());
+  }
+  
+  else if (gps.time.isUpdated())
+  {
+    tft.setCursor(5, 5+(2*25));
+
+    tft.print(F("Hour="));
+    tft.print(gps.time.hour());
+    tft.print(F(" Minute="));
+    tft.print(gps.time.minute());
+    tft.print(F(" Second="));
+    tft.println(gps.time.second());
+  }
+
+  else if (gps.speed.isUpdated())
+  {
+    tft.setCursor(5, 5+(3*25));
+    tft.print(F("Speed km/h="));
+    tft.print(gps.speed.kmph());
+  }
+
+  else if (gps.course.isUpdated())
+  {
+    tft.setCursor(5, 5+(4*25));
+    tft.print(F("Heading Deg="));
+    tft.print(gps.course.deg());
+  }
+
+  else if (gps.altitude.isUpdated())
+  {
+    tft.setCursor(5, 5+(5*25));
+    tft.print(F("Alt Meters="));
+    tft.print(gps.altitude.meters());
+  }
+
+  else if (gps.satellites.isUpdated())
+  {
+    tft.setCursor(5, 5+(6*25));
+    tft.print(F("Sats="));
+    tft.println(gps.satellites.value());
+  }
+
+  else if (gps.location.isValid()) {
+    static const double SLOSS_LAT = 33.5216611, SLOSS_LON = -86.7905838;
+    double distanceToSloss =
+      TinyGPSPlus::distanceBetween(
+        gps.location.lat(),
+        gps.location.lng(),
+        SLOSS_LAT, 
+        SLOSS_LON);
+    double courseToSloss =
+      TinyGPSPlus::courseTo(
+        gps.location.lat(),
+        gps.location.lng(),
+        SLOSS_LAT, 
+        SLOSS_LON);
+
+    tft.setCursor(50, 5+(10*25));
+    tft.print(F("Sloss Distance="));
+    tft.print(distanceToSloss/1000, 6);
+    tft.print(F(" km Course-to="));
+    tft.print(courseToSloss, 6);
+    tft.print(F(" degrees ["));
+    tft.print(TinyGPSPlus::cardinal(courseToSloss));
+    tft.println(F("]"));
+  }
+
+  last += 1;
+
+  unsigned long tme = millis();  
+  if (last % 1000 == 0) {
+    tft.setCursor(5, 5+(12*25));
+    tft.print("Uptime=");
+    tft.print(tme/1000);
+    tft.println("secs");
+  }
+
+
+  // if (last % 200 == 0) {
+  //   color++;
+  //   if (color == 0 ) {tft.setTextColor(TFT_BLACK, TFT_BLACK);}
+  //   if (color == 1 ) {tft.setTextColor(TFT_NAVY, TFT_BLACK);}
+  //   if (color == 2 ) {tft.setTextColor(TFT_DARKGREEN, TFT_BLACK);}
+  //   if (color == 3 ) {tft.setTextColor(TFT_DARKCYAN, TFT_BLACK);}
+  //   if (color == 4 ) {tft.setTextColor(TFT_MAROON, TFT_BLACK);}
+  //   if (color == 5 ) {tft.setTextColor(TFT_PURPLE, TFT_BLACK);}
+  //   if (color == 6 ) {tft.setTextColor(TFT_OLIVE, TFT_BLACK);}
+  //   if (color == 7 ) {tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);}
+  //   if (color == 8 ) {tft.setTextColor(TFT_DARKGREY, TFT_BLACK);}
+  //   if (color == 9 ) {tft.setTextColor(TFT_BLUE, TFT_BLACK);}
+  //   if (color == 10 ) {tft.setTextColor(TFT_GREEN, TFT_BLACK);}
+  //   if (color == 11 ) {tft.setTextColor(TFT_CYAN, TFT_BLACK);}
+  //   if (color == 12 ) {tft.setTextColor(TFT_RED, TFT_BLACK);}
+  //   if (color == 13 ) {tft.setTextColor(TFT_MAGENTA, TFT_BLACK);}
+  //   if (color == 14 ) {tft.setTextColor(TFT_YELLOW, TFT_BLACK);}
+  //   if (color == 15 ) {tft.setTextColor(TFT_WHITE, TFT_BLACK);}
+  //   if (color == 16 ) {tft.setTextColor(TFT_ORANGE, TFT_BLACK);}
+  //   if (color == 17 ) {tft.setTextColor(TFT_GREENYELLOW, TFT_BLACK);}
+  //   if (color == 18 ) {tft.setTextColor(TFT_PINK, TFT_BLACK);}
+  //   if (color >= 19 ) {color = 0;}
+  // }  
+}
