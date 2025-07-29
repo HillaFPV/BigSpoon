@@ -19,36 +19,128 @@ uint8_t rxByte;
 
 uint8_t getCheckSum(uint8_t *buffer, uint8_t ackMessageLen);
 void speedModeRun(uint8_t slaveAddr, uint8_t dir, uint16_t speed, uint8_t acc);
-uint8_t waitingForACK(uint8_t ackMessageLen);
 void blinkLight(uint8_t times);
 long power5(float i);
+long waitingForACK(uint32_t delayTime);
 
 int32_t manualRC = 0;
 String inputString = "";
 char inputChar;
-uint16_t speed = 3000;
+uint16_t speed = 500;
 int32_t panPosition = 0;
-int32_t filteredPosition = 0;
-
+int32_t filteredPanPosition = 0;
+float elapsedTimeInSeconds  = 0.0;
+long ackStatus;
+int16_t panRC;
+int16_t filteredPanRC;
+int16_t tiltRC;
+bool motorIsBusy = false;
+  
 PWM panServoPWM(2);  // Setup pin 2 for pan PWM
 PWM tiltServoPWM(3); // Setup pin 3 for tilt PWM
 
+String printToMonitor(uint8_t *value)
+{
+  int32_t iValue;
+  String  tStr;
+  iValue = (int32_t)(
+                      ((uint32_t)value[0] << 24)    |
+                      ((uint32_t)value[1] << 16)    |
+                      ((uint32_t)value[2] << 8)     |
+                      ((uint32_t)value[3] << 0)
+                    );
+
+  
+  tStr = String(iValue);
+  return tStr;
+}
+
+/*
+Function: read real-time location information
+Input: slaveAddr slave address
+output: none
+ */
+void readRealTimeLocation(uint8_t slaveAddr)
+{
+ 
+  txBuffer[0] = 0xFA;       //frame header
+  txBuffer[1] = slaveAddr;  //slave address
+  txBuffer[2] = 0x31;       //function code
+  txBuffer[3] = getCheckSum(txBuffer,3);  //Calculate checksum
+  Serial1.write(txBuffer,4);   //The serial port issues a command to read the real-time position
+  Serial1.flush();
+}
+
+void positionMode1Run(uint8_t slaveAddr,uint8_t dir,uint16_t speed,uint8_t acc,uint32_t pulses) {
+
+  txBuffer[0] = 0xFA;       //frame header
+  txBuffer[1] = slaveAddr;  //slave address
+  txBuffer[2] = 0xFD;       //function code
+  txBuffer[3] = (dir<<7) | ((speed>>8)&0x0F); //High 4 bits for direction and speed
+  txBuffer[4] = speed&0x00FF;   //8 bits lower
+  txBuffer[5] = acc;            //acceleration
+  txBuffer[6] = (pulses >> 24)&0xFF;  //Pulse bit31 - bit24
+  txBuffer[7] = (pulses >> 16)&0xFF;  //Pulse bit23 - bit16
+  txBuffer[8] = (pulses >> 8)&0xFF;   //Pulse bit15 - bit8
+  txBuffer[9] = (pulses >> 0)&0xFF;   //Pulse bit7 - bit0
+  txBuffer[10] = getCheckSum(txBuffer,10);  //Calculate checksum
+
+  Serial1.write(txBuffer,11);
+  Serial1.flush();
+}
+
+void positionMode2Run(uint8_t slaveAddr, uint16_t speed, uint8_t acc, int32_t pulses) {
+  
+  txBuffer[0] = 0xFA;                                //frame header
+  txBuffer[1] = slaveAddr;                           //slave address
+  txBuffer[2] = 0xFE;                                //function code
+  txBuffer[3] = (speed >> 8) & 0xFF;                 //8 bit higher speed
+  txBuffer[4] = speed & 0x00FF;                      //8 bits lower
+  txBuffer[5] = acc;                                 //acceleration
+  txBuffer[6] = (pulses >> 24) & 0xFF;               //Absolute pulses bit31 - bit24
+  txBuffer[7] = (pulses >> 16) & 0xFF;               //Absolute pulses bit23 - bit16
+  txBuffer[8] = (pulses >> 8) & 0xFF;                //Absolute pulses bit15 - bit8
+  txBuffer[9] = (pulses >> 0) & 0xFF;                //Absolute pulses bit7 - bit0      
+  txBuffer[10] = getCheckSum(txBuffer, 10);          //Calculate checksum
+  
+  Serial1.write(txBuffer, 11);
+  Serial1.flush();
+}
+
+void positionMode3Run(uint8_t slaveAddr, uint16_t speed, uint8_t acc, int32_t position) {
+  
+  txBuffer[0] = 0xFA;                                //frame header
+  txBuffer[1] = slaveAddr;                           //slave address
+  txBuffer[2] = 0xF4;                                //function code
+  txBuffer[3] = (speed >> 8) & 0xFF;                 //8 bit higher speed
+  txBuffer[4] = speed & 0x00FF;                      //8 bits lower
+  txBuffer[5] = acc;                                 //acceleration
+  txBuffer[6] = (position >> 24) & 0xFF;             //Relative coordinates bit31 - bit24
+  txBuffer[7] = (position >> 16) & 0xFF;             //Relative coordinates bit23 - bit16
+  txBuffer[8] = (position >> 8) & 0xFF;              //Relative coordinates bit15 - bit8
+  txBuffer[9] = (position >> 0) & 0xFF;              //Relative coordinates bit7 - bit0      
+  txBuffer[10] = getCheckSum(txBuffer, 10);          //Calculate checksum
+  
+  Serial1.write(txBuffer, 11);
+  Serial1.flush();
+}
 
 void positionMode4Run(uint8_t slaveAddr, uint16_t speed, uint8_t acc, int32_t position) {
   
   txBuffer[0] = 0xFA;                                //frame header
   txBuffer[1] = slaveAddr;                           //slave address
   txBuffer[2] = 0xF5;                                //function code
-  txBuffer[3] = (speed >> 8) & 0xFF;
+  txBuffer[3] = (speed >> 8) & 0xFF;                 //8 bit higher speed
   txBuffer[4] = speed & 0x00FF;                      //8 bits lower
   txBuffer[5] = acc;                                 //acceleration
-  txBuffer[6] = (position & 0xff000000) >> 24;
-  txBuffer[7] = (position & 0x00ff0000) >> 16;
-  txBuffer[8] = (position & 0x0000ff00) >> 8;
-  txBuffer[9] = (position & 0x000000ff);       
+  txBuffer[6] = (position >> 24) & 0xFF;             //Absolute coordinates bit31 - bit24
+  txBuffer[7] = (position >> 16) & 0xFF;             //Absolute coordinates bit23 - bit16
+  txBuffer[8] = (position >> 8) & 0xFF;              //Absolute coordinates bit15 - bit8
+  txBuffer[9] = (position >> 0) & 0xFF;              //Absolute coordinates bit7 - bit0      
   txBuffer[10] = getCheckSum(txBuffer, 10);          //Calculate checksum
   
   Serial1.write(txBuffer, 11);
+  Serial1.flush();
 }
 
 void setup() {
@@ -72,97 +164,94 @@ void setup() {
   tiltServoPWM.begin(true);
   
   start_time = micros();
+
+  speedModeRun(1, 1, 100, 1);
 }
 
 void loop() {
-  
-  uint8_t ackStatus;
-  uint16_t panRC;
-  uint16_t tiltRC;
-  
-  panRC = panServoPWM.getValue();
-  tiltRC = tiltServoPWM.getValue();
-  
-  float elapsed_time = 1E-6 * (micros() - start_time); // in seconds
-  
-  float pan_filtered_signal = f.filter(panRC, elapsed_time);
-  // float tilt_filtered_signal = f.filter(tiltRC, elapsed_time); 
-  
-  // if (Serial.available() > 0) {
-  //   inputChar = Serial.read();
-  //   Serial.write(inputChar);
-  //   if (inputChar == '\r') {
-      
-  //   }
-  //   else if (inputChar == '\n') {
-  //     manualRC =  (int32_t) strtol( inputString.c_str(), 0, 16);
-      
-  //     Serial.print(">manualRC:");
-  //     Serial.print(manualRC);
-  //     Serial.print("filteredPosition: ");
-  //     Serial.print(filteredPosition);
-  //     Serial.print(",inputString:");
-  //     Serial.println(inputString);
-      
-  //     inputString = "";
-  //   }
-  //   else {
-  //     inputString.concat(inputChar);
-  //   }
-  // }
-  
-  // uint8_t manualRunDir = 0;
-  // int16_t manualRunSpeed = (1500 - manualRC) * 6;
-  
-  // if (manualRunSpeed < 0) {
-  //   manualRunDir = 0;
-  // } else {
-  //   manualRunDir = 1;
-  // }
-  
-  // uint16_t manualAbsRunSpeed = min(abs(manualRunSpeed), 3000);
-  
-  if (loops % 100 == 0) {
-    panPosition += pan_filtered_signal/10;
-  }
-  
-  filteredPosition = (int32_t)f.filter(panPosition, elapsed_time);
-  Serial.print(">filteredPosition: ");
-  Serial.print(filteredPosition);
-  Serial.print(",panRC: ");
-  Serial.print(panRC);
-  Serial.print(",pan_filtered_signal: ");
-  Serial.print(pan_filtered_signal);
-  Serial.print(", panPosition:");
-  Serial.println(panPosition);
+  elapsedTimeInSeconds = 1E-6 * (micros() - start_time);
 
-  positionMode4Run(1, speed, 254, filteredPosition);
-  
-  // ackStatus = waitingForACK(5);      //Wait for the motor to answer
-  // if (Serial1.available() > 0)  //The serial port receives data
+  panRC = (panServoPWM.getValue() - 1500) * 1; //1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
+  filteredPanRC = f.filter(panRC, elapsedTimeInSeconds);
+
+  panPosition += filteredPanRC;
+
+  readRealTimeLocation(1); //Slave address = 1, issue a query position information command
+
+  ackStatus = waitingForACK(1000);      //Wait for the motor to answer
+  Serial.print(">ackStatus: ");
+  Serial.println(ackStatus);
+
+  // if(ackStatus == true)        //Received location information
   // {
-  //   rxByte = Serial1.read();  //read 1 byte data
-  //   if (rxCnt != 0) {
-  //     rxBuffer[rxCnt++] = rxByte;  //Storing data
-  //   } else if (rxByte == 0xFB)     //Determine whether the frame header
+  //   printToMonitor(&rxBuffer[5]);
+  // } else {
+  //   Serial.print(">ackStatus:");
+  //   Serial.println(ackStatus);
+
+  // }
+
+  // Serial.print(">panPosition:");
+  // Serial.print(panPosition);
+  // Serial.print(",motorIsBusy:");
+  // Serial.println(motorIsBusy);
+
+  // Serial.println("Firing up the motor");
+  //positionMode4Run(1, 600, 254, panPosition);
+
+  // Serial.println("Waiting for ack");
+  //ackStatus = waitingForACK(3000);      //Wait for the position control to start answering
+
+  // Serial.print("ackStatus: ");
+  // Serial.println(ackStatus);
+
+  // if(ackStatus == 1)                    //Position control starts
+  // {
+  //   Serial.println("Position control starts");
+  //   ackStatus = waitingForACK(2000);     //Wait for the position control to complete the response
+
+  //   Serial.println("Receipt of position control complete response");
+  //   if(ackStatus == 2)                //Receipt of position control complete response
   //   {
-  //     rxBuffer[rxCnt++] = rxByte;  //store frame header
+  //     // Do something with the response      
+  //     Serial.println("Do something with the response      ");
+  //   }
+  //   else                        //Location complete reply not received 
+  //   {
+  //     Serial.println("Location complete reply not received ");
+  //     while(1)                //The flashing light indicates failure
+  //     {
+  //       digitalWrite(LED_BUILTIN, HIGH);     delay(100);
+  //       digitalWrite(LED_BUILTIN, LOW);      delay(100);
+  //     }
   //   }
   // }
-  
-  // uint8_t ackMessageLen = 5;
-  
-  // if (rxCnt == ackMessageLen)  //Receive complete at 5 bytes
+  // else                      //Position control failed
   // {
-  //   if (rxBuffer[ackMessageLen - 1] == getCheckSum(rxBuffer, ackMessageLen - 1)) {
-  //     statusCode = rxBuffer[3];  //checksum correct
-  //   } else {
-  //     rxCnt = 0;  //Verification error, re-receive the response
+  //   Serial.println("Position control failed");
+  //   while(1)                //The flashing light indicates failure
+  //   {
+  //     digitalWrite(LED_BUILTIN, HIGH);     delay(200);
+  //     digitalWrite(LED_BUILTIN, LOW);      delay(200);
   //   }
   // }
+
   loops++;
+  // Serial.println("Looping");
 }
 
+/*
+Function: Gets encoder value of a servo
+Input: slaveAddr slave address
+*/
+void getEncoderValue(uint8_t slaveAddr) {
+  txBuffer[0] = 0xFA;                                //frame header
+  txBuffer[1] = slaveAddr;                           //slave address
+  txBuffer[2] = 0x31;                                //function code
+  txBuffer[3] = getCheckSum(txBuffer, 3);            //Calculate checksum
+  
+  Serial1.write(txBuffer, 4);
+}
 
 /*
 Function: Serial port sends speed mode operation command
@@ -181,6 +270,7 @@ void speedModeRun(uint8_t slaveAddr, uint8_t dir, uint16_t speed, uint8_t acc) {
   txBuffer[6] = getCheckSum(txBuffer, 6);            //Calculate checksum
   
   Serial1.write(txBuffer, 7);
+  Serial1.flush();
 }
 
 /*
@@ -198,38 +288,91 @@ uint8_t getCheckSum(uint8_t *buffer, uint8_t size) {
   return (sum & 0xFF);  //return checksum
 }
 
+
 /*
 Function: Wait for the response from the lower computer, set the timeout time to 3000ms
-Input: ackMessageLen Length of the response frame
+enter:
+   delayTime waiting time (ms),
+   delayTime = 0 , wait indefinitely
 output:
-Run successfully 1
-failed to run 0
-timeout no reply 0
+   Position mode 2 control start 1
+   Position mode 2 control completed 2
+   Position mode 2 control failure 0
+   timeout no reply 0
 */
-uint8_t waitingForACK(uint8_t ackMessageLen) {
-  uint8_t retVal;       //return value
-  uint8_t rxByte;
+long waitingForACK(uint32_t delayTime)
+{
+  long retVal;       //return value
+  unsigned long sTime;  //timing start time
+  unsigned long time;  //current moment
+  uint8_t rxByte;      
+  uint8_t packetLength = 0;
 
-  if (Serial1.available() > 0)  //The serial port receives data
+  sTime = millis();    //get the current moment
+  rxCnt = 0;           //Receive count value set to 0
+  while(1)
   {
-    rxByte = Serial1.read();  //read 1 byte data
-    if (rxCnt != 0) {
-      rxBuffer[rxCnt++] = rxByte;  //Storing data
-    } else if (rxByte == 0xFB)     //Determine whether the frame header
+    if (Serial1.available() > 0)     //The serial port receives data
     {
-      rxBuffer[rxCnt++] = rxByte;  //store frame header
+      rxByte = Serial1.read();       //read 1 byte data
+      if(rxCnt != 0)
+      {
+        rxBuffer[rxCnt++] = rxByte; //Storing data
+      }
+      else if(rxByte == 0xFB)       //Determine whether the frame header
+      {
+        rxBuffer[rxCnt++] = rxByte;   //store frame header
+      }
     }
-  }
-  
-  if (rxCnt == ackMessageLen)  //Receive complete
-  {
-    if (rxBuffer[ackMessageLen - 1] == getCheckSum(rxBuffer, ackMessageLen - 1)) {
-      retVal = rxBuffer[3];  //checksum correct
-    } else {
-      rxCnt = 0;  //Verification error, re-receive the response
-    }
-  }
 
+    
+    if(rxCnt == 3) // Function Code
+    {
+      switch (rxBuffer[2]){
+        case 0x31:
+          packetLength = 10;
+          break;  
+        default:
+          packetLength = 3;
+          break;
+      }
+    }
+
+    if (packetLength > 0) {
+      if(rxCnt == packetLength)    //Receive complete
+      {
+        if(rxBuffer[packetLength-1] == getCheckSum(rxBuffer,packetLength-1))
+        {
+          switch (rxBuffer[2]) {
+            case 0x31:
+              retVal = 69;
+          }
+          // Checksum Correct
+          long sum = 0;
+          for (int i = 0; i<6; i++) {
+            sum = (sum << 8);
+            sum += rxBuffer[3+i];
+          }
+          retVal = sum;
+          break;                  //exit while(1)
+        }
+        else
+        {
+          rxCnt = 0;  //Verification error, re-receive the response
+          retVal = 100;
+          break;
+        }
+      }
+    }
+
+    time = millis();
+    if((delayTime != 0) && ((time - sTime) > delayTime))   //Judging whether to time out
+    {
+      retVal = 0;
+      break;                    //timeout, exit while(1)
+    }
+  }
+  return(retVal);
 }
 
 void blinkLight(uint8_t times) {
