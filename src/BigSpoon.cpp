@@ -26,15 +26,19 @@ long waitingForACK();
 int32_t manualRC = 0;
 String inputString = "";
 char inputChar;
-uint16_t speed = 500;
+
 int32_t panPosition = 0;
 int32_t filteredPanPosition = 0;
 float elapsedTimeInSeconds  = 0.0;
+long bootUpEncoderValue;
 long encoderValue;
 int16_t panRC;
 int16_t filteredPanRC;
 int16_t tiltRC;
 bool motorIsBusy = false;
+
+long maxAngle = 1000000;
+long minAngle = -1000000;
 
 PWM panServoPWM(2);  // Setup pin 2 for pan PWM
 PWM tiltServoPWM(3); // Setup pin 3 for tilt PWM
@@ -168,23 +172,17 @@ void setup() {
   getEncoderValue(1);
   panPosition = waitingForACK();
   encoderValue = panPosition;
+  bootUpEncoderValue = encoderValue;
 }
 
 void loop() {
   elapsedTimeInSeconds = 1E-6 * (micros() - start_time);
   
-  panRC = (panServoPWM.getValue() - 1500) * 5; // 1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
+  panRC = (panServoPWM.getValue() - 1500) * 2; // 1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
   filteredPanRC = f.filter(panRC, elapsedTimeInSeconds);
   
-  if (panPosition + filteredPanRC > 100000){
-    panPosition = 100000;
-  }
-  else if (panPosition + filteredPanRC < -100000){
-    panPosition = -100000;
-  }  
-  else {
-    panPosition += filteredPanRC;
-  }
+  panPosition += filteredPanRC;
+  
   
   
   
@@ -223,7 +221,7 @@ void loop() {
   Serial.print(",encoderValue:");  
   Serial.println(encoderValue);  
   
-  speedModeRun(1, dir, pTerm, 255);
+  speedModeRun(1, dir, pTerm, 0);
   int motorResponse = waitingForACK();      //Wait for the motor to answer
   
   loops++;
