@@ -172,7 +172,7 @@ void setup() {
 void loop() {
   elapsedTimeInSeconds = 1E-6 * (micros() - start_time);
   
-  panRC = (panServoPWM.getValue() - 1500) * 1; // 1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
+  panRC = (panServoPWM.getValue() - 1500) * 2; // 1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
   filteredPanRC = f.filter(panRC, elapsedTimeInSeconds);
   panPosition += filteredPanRC;
   
@@ -211,7 +211,7 @@ void loop() {
   
   
   
-  speedModeRun(1, dir, pTerm, 0);
+  speedModeRun(1, dir, pTerm, 255);
   encoderValue = waitingForACK();      //Wait for the motor to answer
   
   // Serial.print(",motorIsBusy:");
@@ -270,7 +270,7 @@ acc acceleration
 */
 void speedModeRun(uint8_t slaveAddr, uint8_t dir, uint16_t speed, uint8_t acc) {
   if (speed == 0) {
-    dir = 1; // Trick the motor into not sending the stop command
+    speed = 1; // Trick the motor into not sending the stop command
   }
   txBuffer[0] = 0xFA;                                //frame header
   txBuffer[1] = slaveAddr;                           //slave address
