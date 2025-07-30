@@ -2,7 +2,8 @@
 #include <math.h>
 #include "1euroFilter.h"
 
-static OneEuroFilter f; // not enabled yet, setup has to be called later
+static OneEuroFilter panRCFilter;
+static OneEuroFilter panPTermF;
 // Frequency of your incoming noisy data
 // If you are able to provide timestamps, the frequency is automatically determined
 #define FREQUENCY   1   // [Hz] 
@@ -34,30 +35,15 @@ long bootUpEncoderValue;
 long encoderValue;
 int16_t panRC;
 int16_t filteredPanRC;
+int16_t filteredPTerm;
 int16_t tiltRC;
 bool motorIsBusy = false;
 
-long maxAngle = 1000000;
-long minAngle = -1000000;
+long maxAngle = 100000;
+long minAngle = -100000;
 
 PWM panServoPWM(2);  // Setup pin 2 for pan PWM
 PWM tiltServoPWM(3); // Setup pin 3 for tilt PWM
-
-String printToMonitor(uint8_t *value)
-{
-  int32_t iValue;
-  String  tStr;
-  iValue = (int32_t)(
-    ((uint32_t)value[0] << 24)    |
-    ((uint32_t)value[1] << 16)    |
-    ((uint32_t)value[2] << 8)     |
-    ((uint32_t)value[3] << 0)
-  );
-  
-  
-  tStr = String(iValue);
-  return tStr;
-}
 
 /*
 Function: read real-time location information
@@ -152,8 +138,9 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
   
-  // setup filter
-  f.begin(FREQUENCY, MINCUTOFF, BETA);
+  // setup filters
+  panRCFilter.begin(FREQUENCY, MINCUTOFF, BETA);
+  panPTermF.begin(1, 0.05, 0.00005);
   
   // Start the serial ports and wait for connect
   Serial.begin(115200);
@@ -169,37 +156,42 @@ void setup() {
   
   start_time = micros();
   
-  getEncoderValue(1);
-  panPosition = waitingForACK();
-  encoderValue = panPosition;
-  bootUpEncoderValue = encoderValue;
+  int32_t motorBootCode = 0;
+  while(motorBootCode == 0) {
+    getEncoderValue(1);
+    motorBootCode = waitingForACK();
+  }
+  panPosition = motorBootCode;
+  encoderValue = motorBootCode;
+  bootUpEncoderValue = motorBootCode;
 }
 
 void loop() {
   elapsedTimeInSeconds = 1E-6 * (micros() - start_time);
   
-  panRC = (panServoPWM.getValue() - 1500) * 2; // 1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
-  filteredPanRC = f.filter(panRC, elapsedTimeInSeconds);
-  
+  /* Check if PWM signal is out of range.
+     if so, then ELRS isn't connected. Don't run the loop
+     until we get RC link.
+    */
+  int panPWMValue = panServoPWM.getValue();
+  if (panPWMValue < 900 || panPWMValue > 2100) {
+    return;
+  }
+
+  panRC = (panPWMValue - 1500) * 3.8; // 1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
+  filteredPanRC = panRCFilter.filter(panRC, elapsedTimeInSeconds);
+
   panPosition += filteredPanRC;
-  
-  
-  
-  
+
+  if (panPosition < (bootUpEncoderValue + minAngle)) {
+    panPosition = bootUpEncoderValue + minAngle;
+  }
+  else if (panPosition >= (bootUpEncoderValue + maxAngle)) {
+    panPosition = bootUpEncoderValue + maxAngle;
+  }
 
   getEncoderValue(1);
   encoderValue = waitingForACK();      //Wait for the motor to answer
-  
-  // Initialize panposition to the encoderValue to "zero-out"
-  // Setpoint is panPosition
-  // Value is encoderValue
-  // Error is Setpoint - Value
-  // If positive, move CW
-  // If negative, move CCW
-  // Speed (P-term) is a mutiplication factor of the Error value
-  // A lower P term means that the motor will speed up slowly
-  // A higher P term will cause the motor to speed up quickly
-  // Find the direction and speed needed to get to the setpoint
   
   long error = encoderValue - panPosition;
   int dir = 0;
@@ -207,23 +199,28 @@ void loop() {
     dir = 1;
   }
   
-  uint16_t pTerm = abs(error * 0.01);
- 
+  uint16_t pTerm = min(abs(error * 0.10), 2000);
   
+  elapsedTimeInSeconds = 1E-6 * (micros() - start_time);
+  filteredPTerm = panPTermF.filter(pTerm, elapsedTimeInSeconds);
+   
   Serial.print(">panPosition:");
   Serial.print(panPosition);
   Serial.print(",panRC:");
   Serial.print(panRC);
+  Serial.print(",filteredPanRC:");
+  Serial.print(filteredPanRC);
   Serial.print(",error:");
   Serial.print(error);
+  Serial.print(",filteredPTerm:");
+  Serial.print(filteredPTerm);  
   Serial.print(",pTerm:");
-  Serial.print(pTerm);  
+  Serial.print(pTerm);    
   Serial.print(",encoderValue:");  
   Serial.println(encoderValue);  
   
   speedModeRun(1, dir, pTerm, 0);
   int motorResponse = waitingForACK();      //Wait for the motor to answer
-  
   loops++;
 }
 
@@ -265,7 +262,6 @@ uint8_t getCheckSum(uint8_t *buffer, uint8_t size) {
   return (sum & 0xFF);  //return checksum
 }
 
-
 /*
 Function: Wait for the response from the lower computer, set the timeout time to 3000ms
 enter:
@@ -280,11 +276,9 @@ timeout no reply 0
 long waitingForACK()
 {
   long retVal;       //return value
-  unsigned long sTime;  //timing start time
   uint8_t rxByte;      
   uint8_t packetLength = 0;
   
-  sTime = millis();    //get the current moment
   rxCnt = 0;           //Receive count value set to 0
   while(1)
   {
@@ -300,8 +294,7 @@ long waitingForACK()
         rxBuffer[rxCnt++] = rxByte;   //store frame header
       }
     }
-    
-    
+        
     if(rxCnt == 3) // Function Code
     {
       switch (rxBuffer[2]){
@@ -312,7 +305,7 @@ long waitingForACK()
         packetLength = 5;
         break;            
         default:
-        packetLength = 3;
+        packetLength = 0;
         break;
       }
     }
@@ -337,8 +330,6 @@ long waitingForACK()
             case 0xF6: {
               // Speed Mode Command
               retVal = rxBuffer[3];
-              Serial.print("!!!!retVal:");
-              Serial.println(retVal);
               break;   
             }
           }
