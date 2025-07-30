@@ -167,15 +167,28 @@ void setup() {
   
   getEncoderValue(1);
   panPosition = waitingForACK();
+  encoderValue = panPosition;
 }
 
 void loop() {
   elapsedTimeInSeconds = 1E-6 * (micros() - start_time);
   
-  panRC = (panServoPWM.getValue() - 1500) * 2; // 1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
+  panRC = (panServoPWM.getValue() - 1500) * 5; // 1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
   filteredPanRC = f.filter(panRC, elapsedTimeInSeconds);
-  panPosition += filteredPanRC;
   
+  if (panPosition + filteredPanRC > 100000){
+    panPosition = 100000;
+  }
+  else if (panPosition + filteredPanRC < -100000){
+    panPosition = -100000;
+  }  
+  else {
+    panPosition += filteredPanRC;
+  }
+  
+  
+  
+
   getEncoderValue(1);
   encoderValue = waitingForACK();      //Wait for the motor to answer
   
@@ -197,6 +210,7 @@ void loop() {
   }
   
   uint16_t pTerm = abs(error * 0.01);
+ 
   
   Serial.print(">panPosition:");
   Serial.print(panPosition);
@@ -209,56 +223,10 @@ void loop() {
   Serial.print(",encoderValue:");  
   Serial.println(encoderValue);  
   
-  
-  
   speedModeRun(1, dir, pTerm, 255);
-  encoderValue = waitingForACK();      //Wait for the motor to answer
-  
-  // Serial.print(",motorIsBusy:");
-  // Serial.println(motorIsBusy);
-  
-  // Serial.println("Firing up the motor");
-  //positionMode4Run(1, 600, 254, panPosition);
-  
-  // Serial.println("Waiting for ack");
-  //encoderValue = waitingForACK(3000);      //Wait for the position control to start answering
-  
-  // Serial.print("encoderValue: ");
-  // Serial.println(encoderValue);
-  
-  // if(encoderValue == 1)                    //Position control starts
-  // {
-  //   Serial.println("Position control starts");
-  //   encoderValue = waitingForACK(2000);     //Wait for the position control to complete the response
-  
-  //   Serial.println("Receipt of position control complete response");
-  //   if(encoderValue == 2)                //Receipt of position control complete response
-  //   {
-  //     // Do something with the response      
-  //     Serial.println("Do something with the response      ");
-  //   }
-  //   else                        //Location complete reply not received 
-  //   {
-  //     Serial.println("Location complete reply not received ");
-  //     while(1)                //The flashing light indicates failure
-  //     {
-  //       digitalWrite(LED_BUILTIN, HIGH);     delay(100);
-  //       digitalWrite(LED_BUILTIN, LOW);      delay(100);
-  //     }
-  //   }
-  // }
-  // else                      //Position control failed
-  // {
-  //   Serial.println("Position control failed");
-  //   while(1)                //The flashing light indicates failure
-  //   {
-  //     digitalWrite(LED_BUILTIN, HIGH);     delay(200);
-  //     digitalWrite(LED_BUILTIN, LOW);      delay(200);
-  //   }
-  // }
+  int motorResponse = waitingForACK();      //Wait for the motor to answer
   
   loops++;
-  // Serial.println("Looping");
 }
 
 /*
@@ -365,7 +333,7 @@ long waitingForACK()
                 sum += rxBuffer[3+i];
               }
               retVal = sum;
-             
+              
               break;
             }
             case 0xF6: {
@@ -376,7 +344,7 @@ long waitingForACK()
               break;   
             }
           }
-
+          
           rxCnt = 0;
           break;
         }
