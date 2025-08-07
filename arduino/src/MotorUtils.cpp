@@ -14,23 +14,15 @@ uint8_t getCheckSum(uint8_t *buffer, uint8_t size) {
   for (i = 0; i < size; i++) {
     sum += buffer[i];  //Calculate accumulated value
   }
-  return (sum & 0xFF);  //return checksum
+  return (sum & 0xFF); 
 }
 
 /*
-Function: Wait for the response from the lower computer, set the timeout time to 3000ms
-enter:
-delayTime waiting time (ms),
-delayTime = 0 , wait indefinitely
-output:
-Position mode 2 control start 1
-Position mode 2 control completed 2
-Position mode 2 control failure 0
-timeout no reply 0
+Function: Wait for the response from the MKS 42D servo controller
 */
 long waitingForACK()
 {
-  long retVal;       //return value
+  long retVal;
   uint8_t rxByte;      
   uint8_t packetLength = 0;
   
@@ -101,6 +93,7 @@ long waitingForACK()
     }
     
   }
+  delay(1);
   return(retVal);
 }
 

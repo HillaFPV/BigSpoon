@@ -4,14 +4,16 @@
 #include "MotorUtils.h"
 
 static OneEuroFilter panRCFilter;
-static OneEuroFilter panPTermF;
+static OneEuroFilter panPTermFilter;
+
+static OneEuroFilter tiltRCFilter;
+static OneEuroFilter tiltPTermFilter;
+
 // Frequency of your incoming noisy data
 // If you are able to provide timestamps, the frequency is automatically determined
-#define FREQUENCY   1   // [Hz] 
-#define MINCUTOFF   1.0   // Think D-term. 0.05-2.00 range is good
-#define BETA        0.0   // Think P-term. 0.00-0.005 range is good
-
-#define RCPANSCALE = 3.8;
+#define FREQUENCY   10      // [Hz] 
+#define MINCUTOFF   0.05    // Think D-term. 0.05-2.00 range is good
+#define BETA        0.00005 // Think P-term. 0.00-0.005 range is good
 
 unsigned long start_time;
 uint8_t loops = 0;
@@ -19,28 +21,39 @@ uint8_t txBuffer[20];  //Sends data array
 uint8_t rxBuffer[20];  //Receive data array
 uint8_t rxCnt = 0;     //Receive data count
 
-int32_t manualRC = 0;
-String inputString = "";
-char inputChar;
+double elapsedTimeInSeconds  = 0.0;
 
-int32_t panPosition = 0;
-int32_t filteredPanPosition = 0;
-float elapsedTimeInSeconds  = 0.0;
-long bootUpEncoderValue;
-long encoderValue;
+long panPosition;
+long filteredPanPosition;
+
+long tiltPosition;
+long filteredTiltPosition;
+
+long panStartingEncoderValue;
+long panEncoderValue;
+
+long tiltStartingEncoderValue;
+long tiltEncoderValue;
+
 int16_t panRC;
 int16_t filteredPanRC;
-int16_t filteredPTerm;
+int16_t filteredPanPTerm;
+
 int16_t tiltRC;
-bool motorIsBusy = false;
+int16_t filteredTiltRC;
+int16_t filteredTiltPTerm;
 
+long maxPanAngle = 100000;
+long minPanAngle = -100000;
 
-long maxAngle = 100000;
-long minAngle = -100000;
+long maxTiltAngle = 100000;
+long minTiltAngle = -100000;
+
 float rcPanScale = 3.8;
+float rcTiltScale = 3.8;
 
-PWM panServoPWM(2);  // Setup pin 2 for pan PWM
-PWM tiltServoPWM(3); // Setup pin 3 for tilt PWM
+PWM panServoPWM(4);
+PWM tiltServoPWM(5);
 
 void setup() {
   // Set the LED light port as output
@@ -48,9 +61,13 @@ void setup() {
   digitalWrite(LED_BUILTIN, LOW);
   
   // setup filters
-  panRCFilter.begin(10, 0.05, 0.00005);
-  panPTermF.begin(10, 0.05, 0.00005);
+  panRCFilter.begin(FREQUENCY, MINCUTOFF, BETA);
+  panPTermFilter.begin(FREQUENCY, MINCUTOFF, BETA);
+ 
+  tiltRCFilter.begin(FREQUENCY, MINCUTOFF, BETA);
+  tiltPTermFilter.begin(FREQUENCY, MINCUTOFF, BETA);
   
+
   // Start the serial ports and wait for connect
   Serial.begin(115200);
   Serial1.begin(115200);
@@ -62,59 +79,111 @@ void setup() {
   // Start listening for PWM HIGH
   panServoPWM.begin(true);
   tiltServoPWM.begin(true);
-  
+
   start_time = micros();
-  
-  int32_t motorBootCode = getEncoderValue(1);
-  panPosition = motorBootCode;
-  encoderValue = motorBootCode;
-  bootUpEncoderValue = motorBootCode;
+
+  panStartingEncoderValue = getEncoderValue(1);
+  panPosition = panStartingEncoderValue;
+  panEncoderValue = panStartingEncoderValue;
+ 
+  tiltStartingEncoderValue = getEncoderValue(2);
+  tiltPosition = tiltStartingEncoderValue;
+  tiltEncoderValue = tiltStartingEncoderValue;
 }
 
 void loop() {
-  /* Check if PWM signal is out of range.
-     if so, then ELRS isn't connected. Don't run the loop
-     until we get RC link.
-    */
+  // Check if PWM signal is out of range.
+  // if so, then ELRS isn't connected. Don't run the loop
+  // until we get RC link.
   int panPWMValue = panServoPWM.getValue();
   if (panPWMValue < 900 || panPWMValue > 2100) {
     return;
   }
 
-  panRC = (panPWMValue - 1500) * rcPanScale; // 1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
+  int tiltPWMValue = tiltServoPWM.getValue();
+  if (tiltPWMValue < 900 || tiltPWMValue > 2100) {
+    return;
+  }
+
+  // 1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
+  panRC = (panPWMValue - 1500) * rcPanScale; 
+  tiltRC = (tiltPWMValue - 1500) * rcTiltScale;
   
-  elapsedTimeInSeconds = 1E-6 * (micros() - start_time);
   filteredPanRC = panRCFilter.filter(panRC, elapsedTimeInSeconds);
+  filteredTiltRC = tiltRCFilter.filter(tiltRC, elapsedTimeInSeconds);
 
   panPosition += filteredPanRC;
+  tiltPosition += filteredTiltRC;
 
   // Set soft-limits for how far the servo can rotate CW or CCW
-  if (panPosition < (bootUpEncoderValue + minAngle)) {
-    panPosition = bootUpEncoderValue + minAngle;
+  if (panPosition < (panStartingEncoderValue + minPanAngle)) {
+    panPosition = panStartingEncoderValue + minPanAngle;
   }
-  else if (panPosition >= (bootUpEncoderValue + maxAngle)) {
-    panPosition = bootUpEncoderValue + maxAngle;
+  else if (panPosition >= (panStartingEncoderValue + maxPanAngle)) {
+    panPosition = panStartingEncoderValue + maxPanAngle;
   }
 
-  encoderValue = getEncoderValue(1);
+  if (tiltPosition < (tiltStartingEncoderValue + minTiltAngle)) {
+    tiltPosition = tiltStartingEncoderValue + minTiltAngle;
+  }
+  else if (tiltPosition >= (tiltStartingEncoderValue + maxTiltAngle)) {
+    tiltPosition = tiltStartingEncoderValue + maxTiltAngle;
+  }
+
+  panEncoderValue = getEncoderValue(1);
+  tiltEncoderValue = getEncoderValue(2);
   
-  long error = encoderValue - panPosition;
-  int dir = 0;
-  if (error < 0) {
-    dir = 1;
+  long panError = panEncoderValue - panPosition;
+  int panDirection = 0;
+  if (panError < 0) {
+    panDirection = 1;
+  }
+
+  long tiltError = tiltEncoderValue - tiltPosition;
+  int tiltDirection = 0;
+  if (tiltError < 0) {
+    tiltDirection = 1;
   }
   
-  uint16_t pTerm = min(abs(error * 0.10), 2000);
-  elapsedTimeInSeconds = 1E-6 * (micros() - start_time);
-  filteredPTerm = panPTermF.filter(pTerm, elapsedTimeInSeconds);
-  
-  speedModeRun(1, dir, pTerm, 0);
+  uint16_t panPTerm = min(abs(panError * 0.10), 2000);
+  filteredPanPTerm = panPTermFilter.filter(panPTerm, elapsedTimeInSeconds);
+  uint16_t tiltPTerm = min(abs(tiltError * 0.10), 2000);
+  filteredTiltPTerm = tiltPTermFilter.filter(tiltPTerm, elapsedTimeInSeconds);
 
-  Serial.print(">pTerm:");
-  Serial.print(pTerm);
-  Serial.print(",error:");
-  Serial.print(error);
-  Serial.print(",filteredPTerm:");
-  Serial.println(filteredPTerm);
+  Serial.print(">panPTerm:");
+  Serial.print(panPTerm);
+  Serial.print(",panError:");
+  Serial.print(panError);
+  Serial.print(",panRC:");
+  Serial.print(panRC);
+  Serial.print(",panPosition:");
+  Serial.print(panPosition);
+  Serial.print(",panEncoderValue:");
+  Serial.print(panEncoderValue);
+  Serial.print(",filteredPanRC:");
+  Serial.print(filteredPanRC);
+  Serial.print(",filteredPanPTerm:");
+  Serial.print(filteredPanPTerm);
+
+  Serial.print(",tiltPTerm:");
+  Serial.print(tiltPTerm);
+  Serial.print(",tiltError:");
+  Serial.print(tiltError);
+  Serial.print(",tiltRC:");
+  Serial.print(tiltRC);
+  Serial.print(",tiltPosition:");
+  Serial.print(tiltPosition);
+  Serial.print(",tiltEncoderValue:");
+  Serial.print(tiltEncoderValue);
+  Serial.print(",filteredTiltRC:");
+  Serial.print(filteredTiltRC);
+  Serial.print(",filteredTiltPTerm:");
+  Serial.println(filteredTiltPTerm);
+
+  speedModeRun(1, panDirection, panPTerm, 0);
+  speedModeRun(2, tiltDirection, tiltPTerm, 0);
+  
   loops++;
+  elapsedTimeInSeconds = 1E-6 * (micros() - start_time);
+
 }
