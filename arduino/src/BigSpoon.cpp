@@ -1,5 +1,5 @@
-#include "PWM.hpp"
 #include <math.h>
+#include "PWM.hpp"
 #include "1euroFilter.h"
 #include "MotorUtils.h"
 
@@ -110,5 +110,11 @@ void loop() {
   
   speedModeRun(1, dir, pTerm, 0);
 
+  Serial.print(">pTerm:");
+  Serial.print(pTerm);
+  Serial.print(",error:");
+  Serial.print(error);
+  Serial.print(",filteredPTerm:");
+  Serial.println(filteredPTerm);
   loops++;
 }
