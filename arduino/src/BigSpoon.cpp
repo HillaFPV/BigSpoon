@@ -52,8 +52,8 @@ long minTiltAngle = -100000;
 float rcPanScale = 3.8;
 float rcTiltScale = 3.8;
 
-PWM panServoPWM(4);
-PWM tiltServoPWM(5);
+PWM panServoPWM(2);
+PWM tiltServoPWM(3);
 
 void setup() {
   // Set the LED light port as output
