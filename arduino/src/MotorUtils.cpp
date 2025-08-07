@@ -28,9 +28,9 @@ Position mode 2 control completed 2
 Position mode 2 control failure 0
 timeout no reply 0
 */
-int64_t waitingForACK()
+long waitingForACK()
 {
-  int64_t retVal;       //return value
+  long retVal;       //return value
   uint8_t rxByte;      
   uint8_t packetLength = 0;
   
@@ -79,7 +79,6 @@ int64_t waitingForACK()
                 sum += rxBuffer[3+i];
               }
               retVal = sum;
-              
               break;
             }
             case 0xF6: {
@@ -110,7 +109,7 @@ Function: read real-time location information
 Input: slaveAddr slave address
 output: none
 */
-int64_t getEncoderValue(uint8_t slaveAddr) {
+long getEncoderValue(uint8_t slaveAddr) {
   txBuffer[0] = 0xFA;       //frame header
   txBuffer[1] = slaveAddr;  //slave address
   txBuffer[2] = 0x31;       //function code
@@ -122,7 +121,7 @@ int64_t getEncoderValue(uint8_t slaveAddr) {
   return waitingForACK();  
 }
 
-int64_t positionMode1Run(uint8_t slaveAddr,uint8_t dir,uint16_t speed,uint8_t acc,uint32_t pulses) {
+long positionMode1Run(uint8_t slaveAddr,uint8_t dir,uint16_t speed,uint8_t acc,uint32_t pulses) {
   txBuffer[0] = 0xFA;       //frame header
   txBuffer[1] = slaveAddr;  //slave address
   txBuffer[2] = 0xFD;       //function code
@@ -141,7 +140,7 @@ int64_t positionMode1Run(uint8_t slaveAddr,uint8_t dir,uint16_t speed,uint8_t ac
   return waitingForACK(); 
 }
 
-int64_t positionMode2Run(uint8_t slaveAddr, uint16_t speed, uint8_t acc, int32_t pulses) {
+long positionMode2Run(uint8_t slaveAddr, uint16_t speed, uint8_t acc, int32_t pulses) {
   txBuffer[0] = 0xFA;                                //frame header
   txBuffer[1] = slaveAddr;                           //slave address
   txBuffer[2] = 0xFE;                                //function code
@@ -160,7 +159,7 @@ int64_t positionMode2Run(uint8_t slaveAddr, uint16_t speed, uint8_t acc, int32_t
   return waitingForACK(); 
 }
 
-int64_t positionMode3Run(uint8_t slaveAddr, uint16_t speed, uint8_t acc, int32_t position) {
+long positionMode3Run(uint8_t slaveAddr, uint16_t speed, uint8_t acc, int32_t position) {
   txBuffer[0] = 0xFA;                                //frame header
   txBuffer[1] = slaveAddr;                           //slave address
   txBuffer[2] = 0xF4;                                //function code
@@ -179,7 +178,7 @@ int64_t positionMode3Run(uint8_t slaveAddr, uint16_t speed, uint8_t acc, int32_t
   return waitingForACK();  
 }
 
-int64_t positionMode4Run(uint8_t slaveAddr, uint16_t speed, uint8_t acc, int32_t position) {
+long positionMode4Run(uint8_t slaveAddr, uint16_t speed, uint8_t acc, int32_t position) {
   txBuffer[0] = 0xFA;                                //frame header
   txBuffer[1] = slaveAddr;                           //slave address
   txBuffer[2] = 0xF5;                                //function code
@@ -205,7 +204,7 @@ dir running direction
 speed running speed
 acc acceleration
 */
-int64_t speedModeRun(uint8_t slaveAddr, uint8_t dir, uint16_t speed, uint8_t acc) {
+long speedModeRun(uint8_t slaveAddr, uint8_t dir, uint16_t speed, uint8_t acc) {
   if (speed == 0) {
     speed = 1; // Trick the motor into not sending the stop command
   }
