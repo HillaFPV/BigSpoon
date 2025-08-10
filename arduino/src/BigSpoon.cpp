@@ -9,14 +9,15 @@ static OneEuroFilter panPTermFilter;
 static OneEuroFilter tiltRCFilter;
 static OneEuroFilter tiltPTermFilter;
 
+static OneEuroFilter panPositionFilter;
 // Frequency of your incoming noisy data
 // If you are able to provide timestamps, the frequency is automatically determined
-#define FREQUENCY   10      // [Hz] 
+#define FREQUENCY   1      // [Hz] 
 #define MINCUTOFF   0.05    // Think D-term. 0.05-2.00 range is good
 #define BETA        0.00005 // Think P-term. 0.00-0.005 range is good
 
 unsigned long start_time;
-uint8_t loops = 0;
+long loops = 0;
 uint8_t txBuffer[20];  //Sends data array
 uint8_t rxBuffer[20];  //Receive data array
 uint8_t rxCnt = 0;     //Receive data count
@@ -43,14 +44,14 @@ int16_t tiltRC;
 int16_t filteredTiltRC;
 int16_t filteredTiltPTerm;
 
-long maxPanAngle = 100000;
-long minPanAngle = -100000;
+long maxPanAngle = 102400;
+long minPanAngle = -102400;
 
-long maxTiltAngle = 100000;
-long minTiltAngle = -100000;
+long maxTiltAngle = 102400;
+long minTiltAngle = -102400;
 
-float rcPanScale = 3.8;
-float rcTiltScale = 3.8;
+float rcPanScale = 3.0;
+float rcTiltScale = 3.0;
 
 PWM panServoPWM(2);
 PWM tiltServoPWM(3);
@@ -86,7 +87,7 @@ void setup() {
   panPosition = panStartingEncoderValue;
   panEncoderValue = panStartingEncoderValue;
  
-  tiltStartingEncoderValue = getEncoderValue(2);
+  tiltStartingEncoderValue = 0; //getEncoderValue(2);
   tiltPosition = tiltStartingEncoderValue;
   tiltEncoderValue = tiltStartingEncoderValue;
 }
@@ -108,7 +109,7 @@ void loop() {
   // 1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
   panRC = (panPWMValue - 1500) * rcPanScale; 
   tiltRC = (tiltPWMValue - 1500) * rcTiltScale;
-  
+
   filteredPanRC = panRCFilter.filter(panRC, elapsedTimeInSeconds);
   filteredTiltRC = tiltRCFilter.filter(tiltRC, elapsedTimeInSeconds);
 
@@ -131,9 +132,11 @@ void loop() {
   }
 
   panEncoderValue = getEncoderValue(1);
-  tiltEncoderValue = getEncoderValue(2);
+  tiltEncoderValue = 0; //getEncoderValue(2);
   
-  long panError = panEncoderValue - panPosition;
+  long filteredPanPosition = panPositionFilter.filter(panPosition, elapsedTimeInSeconds);
+
+  long panError = panEncoderValue - filteredPanPosition;
   int panDirection = 0;
   if (panError < 0) {
     panDirection = 1;
@@ -145,43 +148,47 @@ void loop() {
     tiltDirection = 1;
   }
   
-  uint16_t panPTerm = min(abs(panError * 0.10), 2000);
-  filteredPanPTerm = panPTermFilter.filter(panPTerm, elapsedTimeInSeconds);
-  uint16_t tiltPTerm = min(abs(tiltError * 0.10), 2000);
-  filteredTiltPTerm = tiltPTermFilter.filter(tiltPTerm, elapsedTimeInSeconds);
+  uint16_t panPTerm = min(abs(panError * 0.05), 2000);
+  // filteredPanPTerm = panPTermFilter.filter(panPTerm, elapsedTimeInSeconds);
+  // uint16_t tiltPTerm = min(abs(tiltError * 0.10), 2000);
+  // filteredTiltPTerm = tiltPTermFilter.filter(tiltPTerm, elapsedTimeInSeconds);
 
-  Serial.print(">panPTerm:");
-  Serial.print(panPTerm);
-  Serial.print(",panError:");
-  Serial.print(panError);
-  Serial.print(",panRC:");
-  Serial.print(panRC);
-  Serial.print(",panPosition:");
-  Serial.print(panPosition);
-  Serial.print(",panEncoderValue:");
-  Serial.print(panEncoderValue);
-  Serial.print(",filteredPanRC:");
-  Serial.print(filteredPanRC);
-  Serial.print(",filteredPanPTerm:");
-  Serial.print(filteredPanPTerm);
+  // Input = panEncoderValue;
+  // Setpoint = filteredPanPosition;
+  // myPID.Compute();
 
-  Serial.print(",tiltPTerm:");
-  Serial.print(tiltPTerm);
-  Serial.print(",tiltError:");
-  Serial.print(tiltError);
-  Serial.print(",tiltRC:");
-  Serial.print(tiltRC);
-  Serial.print(",tiltPosition:");
-  Serial.print(tiltPosition);
-  Serial.print(",tiltEncoderValue:");
-  Serial.print(tiltEncoderValue);
-  Serial.print(",filteredTiltRC:");
-  Serial.print(filteredTiltRC);
-  Serial.print(",filteredTiltPTerm:");
-  Serial.println(filteredTiltPTerm);
+  // Serial.print(">panPTerm:");
+  // Serial.print(panPTerm);
+  // Serial.print(",panPWMValue:");
+  // Serial.print(panPWMValue);
+  // Serial.print(",panError:");
+  // Serial.print(panError);  
+  // Serial.print(",panRC:");
+  // Serial.print(panRC);
+  // Serial.print(",panPosition:");
+  // Serial.print(panPosition);
+  // Serial.print(",panEncoderValue:");
+  // Serial.print(panEncoderValue);
+  // Serial.print(",filteredPanRC:");
+  // Serial.println(filteredPanRC);
+
+  // Serial.print(",tiltPTerm:");
+  // Serial.print(tiltPTerm);
+  // Serial.print(",tiltError:");
+  // Serial.print(tiltError);
+  // Serial.print(",tiltRC:");
+  // Serial.print(tiltRC);
+  // Serial.print(",tiltPosition:");
+  // Serial.print(tiltPosition);
+  // Serial.print(",tiltEncoderValue:");
+  // Serial.print(tiltEncoderValue);
+  // Serial.print(",filteredTiltRC:");
+  // Serial.print(filteredTiltRC);
+  // Serial.print(",filteredTiltPTerm:");
+  // Serial.println(filteredTiltPTerm);
 
   speedModeRun(1, panDirection, panPTerm, 0);
-  speedModeRun(2, tiltDirection, tiltPTerm, 0);
+  //speedModeRun(2, tiltDirection, tiltPTerm, 0);
   
   loops++;
   elapsedTimeInSeconds = 1E-6 * (micros() - start_time);

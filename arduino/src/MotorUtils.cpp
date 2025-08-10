@@ -93,7 +93,7 @@ long waitingForACK()
     }
     
   }
-  delay(1);
+
   return(retVal);
 }
 
