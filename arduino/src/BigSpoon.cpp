@@ -27,6 +27,10 @@ uint8_t rxCnt = 0;
 unsigned long start_time;
 double elapsedTimeInSeconds  = 0.0;
 
+// PWM pulse width in microseconds
+int panPWMValue;
+int tiltPWMValue;
+
 // Setpoint location raw and filtered values on the encoder 
 long panPosition;
 long filteredPanPosition;
@@ -48,16 +52,24 @@ int16_t filteredPanRC;
 int16_t tiltRC;
 int16_t filteredTiltRC;
 
+// Proportional (P) terms
+uint16_t panPTerm;
+uint16_t tiltPTerm;
+
+// Error values (distance between setpoint and encoder value)
+long panError;
+long tiltError;
+
 // Maximum and minimum range in motor steps the motor will turn
 long maxPanAngle = 102400;
 long minPanAngle = -102400;
 
-long maxTiltAngle = 102400;
-long minTiltAngle = -102400;
+long maxTiltAngle = 10240;
+long minTiltAngle = -10240;
 
 // Scalar value for rates
-float rcPanScale = 2.0;
-float rcTiltScale = 2.0;
+float rcPanScale = 1.5;
+float rcTiltScale = 1.5;
 
 void setup() {
   // Setup filters
@@ -85,7 +97,7 @@ void setup() {
   panPosition = panStartingEncoderValue;
   panEncoderValue = panStartingEncoderValue;
 
-  tiltStartingEncoderValue = 0; //getEncoderValue(2);
+  tiltStartingEncoderValue = getEncoderValue(2);
   tiltPosition = tiltStartingEncoderValue;
   tiltEncoderValue = tiltStartingEncoderValue;
 
@@ -97,12 +109,12 @@ void loop() {
   // Check if PWM signal is out of range.
   // if so, then ELRS isn't connected. Don't run the loop
   // until we get RC link.
-  int panPWMValue = panServoPWM.getValue();
+  panPWMValue = panServoPWM.getValue();
   if (panPWMValue < 900 || panPWMValue > 2100) {
     return;
   }
-
-  int tiltPWMValue = tiltServoPWM.getValue();
+  
+  tiltPWMValue = tiltServoPWM.getValue();
   if (tiltPWMValue < 900 || tiltPWMValue > 2100) {
     return;
   }
@@ -132,31 +144,31 @@ void loop() {
     tiltPosition = tiltStartingEncoderValue + maxTiltAngle;
   }
   
-  long filteredPanPosition = panPositionFilter.filter(panPosition, elapsedTimeInSeconds);
-  long filteredTiltPosition = tiltPositionFilter.filter(tiltPosition, elapsedTimeInSeconds);
+  filteredPanPosition = panPositionFilter.filter(panPosition, elapsedTimeInSeconds);
+  filteredTiltPosition = tiltPositionFilter.filter(tiltPosition, elapsedTimeInSeconds);
 
   panEncoderValue = getEncoderValue(1);
-  tiltEncoderValue = 0; //getEncoderValue(2);
+  tiltEncoderValue = getEncoderValue(2);
 
-  long panError = panEncoderValue - filteredPanPosition;
+  panError = panEncoderValue - filteredPanPosition;
   int panDirection = 0;
   if (panError < 0) {
     panDirection = 1;
   }
 
-  long tiltError = tiltEncoderValue - filteredTiltPosition;
+  tiltError = tiltEncoderValue - filteredTiltPosition;
   int tiltDirection = 0;
   if (tiltError < 0) {
     tiltDirection = 1;
   }
   
   // Define a proportional (P) term to bring the setpoint/encoder error to 0.
-  uint16_t panPTerm = min(abs(panError * 0.05), 2000);
-  uint16_t tiltPTerm = min(abs(tiltError * 0.05), 2000);
+  panPTerm = min(abs(panError * 0.05), 2000);
+  tiltPTerm = min(abs(tiltError * 0.05), 2000);
   
   // Command the motors to run according to the P-term
   speedModeRun(1, panDirection, panPTerm, 0);
-  // speedModeRun(2, tiltDirection, tiltPTerm, 0);
+  speedModeRun(2, tiltDirection, tiltPTerm, 0);
 
   // Finished the loop. Note the total time it took to run so the filter can
   // infer Hz
