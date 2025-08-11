@@ -3,76 +3,70 @@
 #include "1euroFilter.h"
 #include "MotorUtils.h"
 
-static OneEuroFilter panRCFilter;
-static OneEuroFilter panPTermFilter;
+// Filters and parameters
+#define FREQUENCY   50     // [Hz] Frequency of your incoming noisy data
+#define MINCUTOFF   0.0001
+#define BETA        0.0001
 
+static OneEuroFilter panRCFilter;
 static OneEuroFilter tiltRCFilter;
-static OneEuroFilter tiltPTermFilter;
 
 static OneEuroFilter panPositionFilter;
-// Frequency of your incoming noisy data
-// If you are able to provide timestamps, the frequency is automatically determined
-#define FREQUENCY   1      // [Hz] 
-#define MINCUTOFF   0.05    // Think D-term. 0.05-2.00 range is good
-#define BETA        0.00005 // Think P-term. 0.00-0.005 range is good
+static OneEuroFilter tiltPositionFilter;
 
+// PWM on digital interrupt pins 2 and 3
+PWM panServoPWM(2);
+PWM tiltServoPWM(3);
+
+// Serial data buffers for RS-485 packets between the motor
+uint8_t txBuffer[20];
+uint8_t rxBuffer[20];
+uint8_t rxCnt = 0;
+
+// Timestamps for filters
 unsigned long start_time;
-long loops = 0;
-uint8_t txBuffer[20];  //Sends data array
-uint8_t rxBuffer[20];  //Receive data array
-uint8_t rxCnt = 0;     //Receive data count
-
 double elapsedTimeInSeconds  = 0.0;
 
+// Setpoint location raw and filtered values on the encoder 
 long panPosition;
 long filteredPanPosition;
 
 long tiltPosition;
 long filteredTiltPosition;
 
+// Initial encoder values to perform "center on startup"
 long panStartingEncoderValue;
 long panEncoderValue;
 
 long tiltStartingEncoderValue;
 long tiltEncoderValue;
 
+// RC raw and filter values from the PWM
 int16_t panRC;
 int16_t filteredPanRC;
-int16_t filteredPanPTerm;
 
 int16_t tiltRC;
 int16_t filteredTiltRC;
-int16_t filteredTiltPTerm;
 
+// Maximum and minimum range in motor steps the motor will turn
 long maxPanAngle = 102400;
 long minPanAngle = -102400;
 
 long maxTiltAngle = 102400;
 long minTiltAngle = -102400;
 
-float rcPanScale = 3.0;
-float rcTiltScale = 3.0;
-
-PWM panServoPWM(2);
-PWM tiltServoPWM(3);
+// Scalar value for rates
+float rcPanScale = 2.0;
+float rcTiltScale = 2.0;
 
 void setup() {
-  // Set the LED light port as output
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
-  
-  // setup filters
+  // Setup filters
   panRCFilter.begin(FREQUENCY, MINCUTOFF, BETA);
-  panPTermFilter.begin(FREQUENCY, MINCUTOFF, BETA);
- 
   tiltRCFilter.begin(FREQUENCY, MINCUTOFF, BETA);
-  tiltPTermFilter.begin(FREQUENCY, MINCUTOFF, BETA);
-  
 
   // Start the serial ports and wait for connect
   Serial.begin(115200);
   Serial1.begin(115200);
-  
   while (!Serial || !Serial1) {
     ; 
   }
@@ -81,15 +75,22 @@ void setup() {
   panServoPWM.begin(true);
   tiltServoPWM.begin(true);
 
-  start_time = micros();
-
+  // Get initial encoder value from motors
+  // TODO: If the motor doesn't respond (powered off) this will
+  //       hang forever. We should implement a timeout on `getEncoderValue`
+  //       and run this in a loop until a connection is established.
+  //       otherwise, the motors must be powered and booted up
+  //       before the Arduino.
   panStartingEncoderValue = getEncoderValue(1);
   panPosition = panStartingEncoderValue;
   panEncoderValue = panStartingEncoderValue;
- 
+
   tiltStartingEncoderValue = 0; //getEncoderValue(2);
   tiltPosition = tiltStartingEncoderValue;
   tiltEncoderValue = tiltStartingEncoderValue;
+
+  // Keep track of start time for filters
+  start_time = micros();
 }
 
 void loop() {
@@ -130,11 +131,12 @@ void loop() {
   else if (tiltPosition >= (tiltStartingEncoderValue + maxTiltAngle)) {
     tiltPosition = tiltStartingEncoderValue + maxTiltAngle;
   }
+  
+  long filteredPanPosition = panPositionFilter.filter(panPosition, elapsedTimeInSeconds);
+  long filteredTiltPosition = tiltPositionFilter.filter(tiltPosition, elapsedTimeInSeconds);
 
   panEncoderValue = getEncoderValue(1);
   tiltEncoderValue = 0; //getEncoderValue(2);
-  
-  long filteredPanPosition = panPositionFilter.filter(panPosition, elapsedTimeInSeconds);
 
   long panError = panEncoderValue - filteredPanPosition;
   int panDirection = 0;
@@ -142,55 +144,21 @@ void loop() {
     panDirection = 1;
   }
 
-  long tiltError = tiltEncoderValue - tiltPosition;
+  long tiltError = tiltEncoderValue - filteredTiltPosition;
   int tiltDirection = 0;
   if (tiltError < 0) {
     tiltDirection = 1;
   }
   
+  // Define a proportional (P) term to bring the setpoint/encoder error to 0.
   uint16_t panPTerm = min(abs(panError * 0.05), 2000);
-  // filteredPanPTerm = panPTermFilter.filter(panPTerm, elapsedTimeInSeconds);
-  // uint16_t tiltPTerm = min(abs(tiltError * 0.10), 2000);
-  // filteredTiltPTerm = tiltPTermFilter.filter(tiltPTerm, elapsedTimeInSeconds);
-
-  // Input = panEncoderValue;
-  // Setpoint = filteredPanPosition;
-  // myPID.Compute();
-
-  // Serial.print(">panPTerm:");
-  // Serial.print(panPTerm);
-  // Serial.print(",panPWMValue:");
-  // Serial.print(panPWMValue);
-  // Serial.print(",panError:");
-  // Serial.print(panError);  
-  // Serial.print(",panRC:");
-  // Serial.print(panRC);
-  // Serial.print(",panPosition:");
-  // Serial.print(panPosition);
-  // Serial.print(",panEncoderValue:");
-  // Serial.print(panEncoderValue);
-  // Serial.print(",filteredPanRC:");
-  // Serial.println(filteredPanRC);
-
-  // Serial.print(",tiltPTerm:");
-  // Serial.print(tiltPTerm);
-  // Serial.print(",tiltError:");
-  // Serial.print(tiltError);
-  // Serial.print(",tiltRC:");
-  // Serial.print(tiltRC);
-  // Serial.print(",tiltPosition:");
-  // Serial.print(tiltPosition);
-  // Serial.print(",tiltEncoderValue:");
-  // Serial.print(tiltEncoderValue);
-  // Serial.print(",filteredTiltRC:");
-  // Serial.print(filteredTiltRC);
-  // Serial.print(",filteredTiltPTerm:");
-  // Serial.println(filteredTiltPTerm);
-
-  speedModeRun(1, panDirection, panPTerm, 0);
-  //speedModeRun(2, tiltDirection, tiltPTerm, 0);
+  uint16_t tiltPTerm = min(abs(tiltError * 0.05), 2000);
   
-  loops++;
-  elapsedTimeInSeconds = 1E-6 * (micros() - start_time);
+  // Command the motors to run according to the P-term
+  speedModeRun(1, panDirection, panPTerm, 0);
+  // speedModeRun(2, tiltDirection, tiltPTerm, 0);
 
+  // Finished the loop. Note the total time it took to run so the filter can
+  // infer Hz
+  elapsedTimeInSeconds = 1E-6 * (micros() - start_time);
 }

@@ -10,4 +10,3 @@ uint8_t getCheckSum(uint8_t *buffer, uint8_t size);
 long waitingForACK();
 
 void blinkLight(uint8_t times);
-
