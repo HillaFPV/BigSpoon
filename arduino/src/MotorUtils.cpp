@@ -198,8 +198,8 @@ speed running speed
 acc acceleration
 */
 long speedModeRun(uint8_t slaveAddr, uint8_t dir, uint16_t speed, uint8_t acc) {
-  if (speed == 0) {
-    speed = 1; // Trick the motor into not sending the stop command
+  if (speed == 0) { // Trick the motor into not sending the stop command
+    speed = 1; 
   }
   txBuffer[0] = 0xFA;                                //frame header
   txBuffer[1] = slaveAddr;                           //slave address

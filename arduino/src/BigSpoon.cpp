@@ -2,17 +2,25 @@
 #include "PWM.hpp"
 #include "1euroFilter.h"
 #include "MotorUtils.h"
+#include "Debug.h"
+#include "filter_lib.h"
+
 
 // Filters and parameters
-#define FREQUENCY   50     // [Hz] Frequency of your incoming noisy data
-#define MINCUTOFF   0.0001
-#define BETA        0.0001
+#define FREQUENCY   100     // [Hz] Frequency of your incoming noisy data
+#define MINCUTOFF   1.00
+#define BETA        1.00
+#define DCUTOFF     1.00
 
+// Hey girl, you like filters?
 static OneEuroFilter panRCFilter;
 static OneEuroFilter tiltRCFilter;
 
 static OneEuroFilter panPositionFilter;
 static OneEuroFilter tiltPositionFilter;
+
+lowpass_filter panLowpassFilter(3); 
+lowpass_filter tiltLowpassFilter(3);
 
 // PWM on digital interrupt pins 2 and 3
 PWM panServoPWM(2);
@@ -64,17 +72,19 @@ long tiltError;
 long maxPanAngle = 102400;
 long minPanAngle = -102400;
 
-long maxTiltAngle = 10240;
-long minTiltAngle = -10240;
+long maxTiltAngle = 20480;
+long minTiltAngle = -20480;
 
 // Scalar value for rates
-float rcPanScale = 1.5;
-float rcTiltScale = 1.5;
+float rcPanScale = 3.5;
+float rcTiltScale = 3.5;
 
 void setup() {
   // Setup filters
-  panRCFilter.begin(FREQUENCY, MINCUTOFF, BETA);
-  tiltRCFilter.begin(FREQUENCY, MINCUTOFF, BETA);
+  panRCFilter.begin(FREQUENCY, MINCUTOFF, 1, 1);
+  tiltRCFilter.begin(FREQUENCY, MINCUTOFF, BETA, DCUTOFF);
+  panPositionFilter.begin(FREQUENCY, MINCUTOFF, BETA, DCUTOFF);
+  tiltPositionFilter.begin(FREQUENCY, MINCUTOFF, BETA, DCUTOFF);
 
   // Start the serial ports and wait for connect
   Serial.begin(115200);
@@ -113,11 +123,22 @@ void loop() {
   if (panPWMValue < 900 || panPWMValue > 2100) {
     return;
   }
-  
   tiltPWMValue = tiltServoPWM.getValue();
   if (tiltPWMValue < 900 || tiltPWMValue > 2100) {
     return;
   }
+
+  // Squash out noise around center stick
+  if (panPWMValue > 1450 && panPWMValue < 1550) {
+    panPWMValue = ((panPWMValue - 1500) / 10) + 1500;
+  }
+  if (tiltPWMValue > 1450 && tiltPWMValue < 1550) {
+    tiltPWMValue = ((tiltPWMValue - 1500) / 10) + 1500;
+  }   
+  
+  // Squash more noise with a lowpass filter the PWM input
+  panPWMValue = panLowpassFilter.filter(panPWMValue);
+  tiltPWMValue = tiltLowpassFilter.filter(tiltPWMValue);
 
   // 1500 is the center-stick value for these PWM signals. They range from 1000-2000us.
   panRC = (panPWMValue - 1500) * rcPanScale; 
@@ -169,6 +190,8 @@ void loop() {
   // Command the motors to run according to the P-term
   speedModeRun(1, panDirection, panPTerm, 0);
   speedModeRun(2, tiltDirection, tiltPTerm, 0);
+
+  // debug();
 
   // Finished the loop. Note the total time it took to run so the filter can
   // infer Hz
