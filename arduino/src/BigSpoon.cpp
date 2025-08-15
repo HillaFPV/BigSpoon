@@ -69,15 +69,15 @@ long panError;
 long tiltError;
 
 // Maximum and minimum range in motor steps the motor will turn
-long maxPanAngle = 102400;
-long minPanAngle = -102400;
+long maxPanAngle = 51200;
+long minPanAngle = -51200;
 
-long maxTiltAngle = 20480;
-long minTiltAngle = -20480;
+long maxTiltAngle = 10240;
+long minTiltAngle = -10240;
 
 // Scalar value for rates
-float rcPanScale = 3.5;
-float rcTiltScale = 3.5;
+float rcPanScale = 3.0;
+float rcTiltScale = 3.0;
 
 void setup() {
   // Setup filters
